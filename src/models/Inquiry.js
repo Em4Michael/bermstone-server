@@ -8,7 +8,7 @@ const InquirySchema = new mongoose.Schema(
     firstName: { type: String, required: true, trim: true },
     lastName:  { type: String, required: true, trim: true },
     email:     { type: String, required: true, lowercase: true, trim: true },
-    phone:     { type: String, required: true },
+    phone:     { type: String },
     company:   String,
     subject:   String,
     message:   { type: String, required: true },

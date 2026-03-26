@@ -9,53 +9,86 @@ const router = express.Router();
 // POST /api/bookings
 router.post('/',
   [
-    body('property').notEmpty(),
-    body('checkIn').isISO8601(),
-    body('checkOut').isISO8601(),
-    body('guests').isInt({ min: 1 }),
-    body('guestInfo.firstName').notEmpty(),
-    body('guestInfo.lastName').notEmpty(),
-    body('guestInfo.email').isEmail(),
-    body('guestInfo.phone').notEmpty(),
+    body('property').notEmpty().withMessage('Property ID required'),
+    body('checkIn').isISO8601().withMessage('Valid check-in date required'),
+    body('checkOut').isISO8601().withMessage('Valid check-out date required'),
+    body('guests').isInt({ min: 1 }).withMessage('At least 1 guest required'),
+    body('guestInfo.firstName').notEmpty().withMessage('First name required'),
+    body('guestInfo.lastName').notEmpty().withMessage('Last name required'),
+    body('guestInfo.email').isEmail().withMessage('Valid email required'),
+    body('guestInfo.phone').notEmpty().withMessage('Phone required'),
   ],
   async (req, res, next) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
+    }
+
     try {
       const { property: propId, checkIn, checkOut, guests, guestInfo, specialRequests } = req.body;
+
       const property = await Property.findById(propId);
-      if (!property) return res.status(404).json({ success: false, message: 'Property not found' });
+      if (!property) {
+        return res.status(404).json({ success: false, message: 'Property not found' });
+      }
 
       const inDate  = new Date(checkIn);
       const outDate = new Date(checkOut);
-      if (inDate >= outDate) return res.status(400).json({ success: false, message: 'Check-out must be after check-in' });
-      if (guests > property.maxGuests) return res.status(400).json({ success: false, message: `Max guests is ${property.maxGuests}` });
 
-      const nights   = Math.ceil((outDate - inDate) / (1000 * 60 * 60 * 24));
-      const subtotal = property.pricePerNight * nights;
-      const applicable = (property.discounts || []).filter(d => nights >= d.minNights);
-      let discountAmount = 0;
-      if (applicable.length) {
-        const best = applicable.reduce((a, b) => a.percentage > b.percentage ? a : b);
-        discountAmount = (subtotal * best.percentage) / 100;
+      if (inDate >= outDate) {
+        return res.status(400).json({ success: false, message: 'Check-out must be after check-in' });
+      }
+      if (Number(guests) > property.maxGuests) {
+        return res.status(400).json({ success: false, message: `Max guests for this property is ${property.maxGuests}` });
       }
 
-      const booking = await Booking.create({
-        property: propId, guestInfo, checkIn: inDate, checkOut: outDate, guests, nights,
-        pricePerNight: property.pricePerNight, subtotal, discountAmount,
-        totalAmount: subtotal - discountAmount, currency: property.currency,
-        specialRequests, externalBookingLink: property.bookingLink,
+      const nights   = Math.ceil((outDate.getTime() - inDate.getTime()) / (1000 * 60 * 60 * 24));
+      const subtotal = property.pricePerNight * nights;
+
+      // Best applicable discount
+      let discountAmount = 0;
+      if (Array.isArray(property.discounts) && property.discounts.length > 0) {
+        const applicable = property.discounts.filter(d => nights >= d.minNights);
+        if (applicable.length > 0) {
+          const best = applicable.reduce((a, b) => a.percentage > b.percentage ? a : b);
+          discountAmount = Math.round((subtotal * best.percentage) / 100);
+        }
+      }
+
+      // Use new + save so pre-save hook runs cleanly (avoids Booking.create issues)
+      const booking = new Booking({
+        property:            propId,
+        guestInfo,
+        checkIn:             inDate,
+        checkOut:            outDate,
+        guests:              Number(guests),
+        pricePerNight:       property.pricePerNight,
+        subtotal,
+        discountAmount,
+        totalAmount:         subtotal - discountAmount,
+        currency:            property.currency || 'NGN',
+        specialRequests:     specialRequests || '',
+        externalBookingLink: property.bookingLink || '',
       });
+
+      await booking.save();
+
       res.status(201).json({ success: true, data: booking });
     } catch (err) { next(err); }
   }
 );
 
-// GET /api/bookings  (admin gets all, user gets own)
+// GET /api/bookings
 router.get('/', protect, async (req, res, next) => {
   try {
-    const query = req.user.role === 'admin' ? {} : { 'guestInfo.email': req.user.email };
-    const bookings = await Booking.find(query).populate('property', 'name coverImage location').sort({ createdAt: -1 });
+    const query = req.user.role === 'admin'
+      ? {}
+      : { 'guestInfo.email': req.user.email };
+
+    const bookings = await Booking.find(query)
+      .populate('property', 'name coverImage location')
+      .sort({ createdAt: -1 });
+
     res.json({ success: true, data: bookings });
   } catch (err) { next(err); }
 });
@@ -63,7 +96,8 @@ router.get('/', protect, async (req, res, next) => {
 // GET /api/bookings/:ref
 router.get('/:ref', async (req, res, next) => {
   try {
-    const booking = await Booking.findOne({ bookingReference: req.params.ref }).populate('property', 'name coverImage location pricePerNight');
+    const booking = await Booking.findOne({ bookingReference: req.params.ref })
+      .populate('property', 'name coverImage location pricePerNight');
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
     res.json({ success: true, data: booking });
   } catch (err) { next(err); }

@@ -8,19 +8,31 @@ const router = express.Router();
 // POST /api/inquiries
 router.post('/',
   [
-    body('type').isIn(['owner_listing','investor','general_contact']),
-    body('firstName').trim().notEmpty(),
-    body('lastName').trim().notEmpty(),
-    body('email').isEmail(),
-    body('phone').notEmpty(),
-    body('message').trim().isLength({ min: 10 }),
+    body('type').isIn(['owner_listing', 'investor', 'general_contact'])
+      .withMessage('Invalid inquiry type'),
+    body('firstName').trim().notEmpty().withMessage('First name required'),
+    body('lastName').trim().notEmpty().withMessage('Last name required'),
+    body('email').isEmail().withMessage('Valid email required'),
+    // phone is optional — not everyone has it set on their profile
+    body('phone').optional({ checkFalsy: true }),
+    body('message').trim().isLength({ min: 5 }).withMessage('Message must be at least 5 characters'),
   ],
   async (req, res, next) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: errors.array()[0].msg,
+        errors:  errors.array(),
+      });
+    }
     try {
       const inquiry = await Inquiry.create(req.body);
-      res.status(201).json({ success: true, message: "Inquiry received. We'll be in touch within 24 hours.", data: { id: inquiry._id } });
+      res.status(201).json({
+        success: true,
+        message: "Inquiry received. We'll be in touch within 24 hours.",
+        data: { id: inquiry._id },
+      });
     } catch (err) { next(err); }
   }
 );
@@ -37,7 +49,11 @@ router.get('/', protect, authorize('admin'), async (req, res, next) => {
       Inquiry.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
       Inquiry.countDocuments(query),
     ]);
-    res.json({ success: true, data: inquiries, pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) } });
+    res.json({
+      success: true,
+      data: inquiries,
+      pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) },
+    });
   } catch (err) { next(err); }
 });
 
