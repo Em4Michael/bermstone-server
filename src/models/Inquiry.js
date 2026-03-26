@@ -37,4 +37,4 @@ const InquirySchema = new mongoose.Schema(
 
 InquirySchema.index({ type: 1, status: 1 });
 
-module.exports = mongoose.model('Inquiry', InquirySchema);
+module.exports = mongoose.models['Inquiry'] || mongoose.model('Inquiry', InquirySchema);

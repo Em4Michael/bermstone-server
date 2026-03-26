@@ -64,4 +64,4 @@ PropertySchema.pre('save', function (next) {
 PropertySchema.index({ 'location.city': 1, isActive: 1 });
 PropertySchema.index({ pricePerNight: 1 });
 
-module.exports = mongoose.model('Property', PropertySchema);
+module.exports = mongoose.models['Property'] || mongoose.model('Property', PropertySchema);

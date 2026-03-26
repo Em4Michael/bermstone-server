@@ -65,4 +65,4 @@ InvestmentSchema.virtual('fundingPercentage').get(function () {
   return this.totalAmount ? Math.round((this.currentlyRaised / this.totalAmount) * 100) : 0;
 });
 
-module.exports = mongoose.model('Investment', InvestmentSchema);
+module.exports = mongoose.models['Investment'] || mongoose.model('Investment', InvestmentSchema);

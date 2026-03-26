@@ -48,4 +48,4 @@ ReviewSchema.post('save', async function () {
 
 ReviewSchema.index({ property: 1, isPublished: 1 });
 
-module.exports = mongoose.model('Review', ReviewSchema);
+module.exports = mongoose.models['Review'] || mongoose.model('Review', ReviewSchema);

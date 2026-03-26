@@ -55,13 +55,14 @@ router.post('/',
         }
       }
 
-      // Use new + save so pre-save hook runs cleanly (avoids Booking.create issues)
-      const booking = new Booking({
+      // Booking.create is safe now — model won't be re-registered on hot reload
+      const booking = await Booking.create({
         property:            propId,
         guestInfo,
         checkIn:             inDate,
         checkOut:            outDate,
         guests:              Number(guests),
+        nights,                         // passed explicitly so no conflict with hook
         pricePerNight:       property.pricePerNight,
         subtotal,
         discountAmount,
@@ -70,8 +71,6 @@ router.post('/',
         specialRequests:     specialRequests || '',
         externalBookingLink: property.bookingLink || '',
       });
-
-      await booking.save();
 
       res.status(201).json({ success: true, data: booking });
     } catch (err) { next(err); }

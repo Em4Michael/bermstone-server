@@ -27,7 +27,7 @@ const BookingSchema = new mongoose.Schema(
     paymentStatus: { type: String, enum: ['unpaid','partially_paid','paid','refunded'], default: 'unpaid' },
 
     specialRequests:     String,
-    bookingReference:    { type: String },  // ← removed "unique: true" from here
+    bookingReference:    { type: String, unique: true },
     externalBookingLink: String,
   },
   { timestamps: true }
@@ -45,4 +45,7 @@ BookingSchema.pre('save', function (next) {
 });
 
 BookingSchema.index({ property: 1, checkIn: 1, checkOut: 1 });
-BookingSchema.index({ bookingReference: 1 }, { unique: true }); 
+BookingSchema.index({ bookingReference: 1 });
+
+// Prevent "Cannot overwrite model once compiled" on nodemon hot-reload
+module.exports = mongoose.models.Booking || mongoose.model('Booking', BookingSchema);
