@@ -99,11 +99,9 @@ app.use(errorHandler);
 // ── Start ──────────────────────────────────────────────
 // Render requires listening on 0.0.0.0, not just the port
 const PORT = Number(process.env.PORT) || 5000;
-const HOST = '0.0.0.0';
-
-const server = app.listen(PORT, HOST, () => {
-  console.log(`\n🚀 Bermstone API  →  http://${HOST}:${PORT}`);
-  console.log(`💊 Health check   →  http://${HOST}:${PORT}/health`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 Bermstone API  →  http://0.0.0.0:${PORT}`);
+  console.log(`💊 Health check   →  http://0.0.0.0:${PORT}/health`);
   console.log(`🌍 Environment    →  ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Allowed CORS   →  ${allowedOrigins.join(', ')}\n`);
 });
