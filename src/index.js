@@ -1,4 +1,6 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 const express      = require('express');
 const cors         = require('cors');
 const helmet       = require('helmet');
@@ -8,77 +10,66 @@ const connectDB    = require('./config/db');
 const errorHandler = require('./middleware/error');
 
 const app = express();
-
-// ── Trust Render/Heroku reverse proxy ──────────────────
-// CRITICAL: Without this, express-rate-limit sees the proxy IP
-// for every request and behaves unpredictably on live servers.
-app.set('trust proxy', 1);
-
 connectDB();
 
-// ── Security ───────────────────────────────────────────
-app.use(helmet());
-
-// Build allowed origins list from env vars
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:3001',
-  process.env.CLIENT_URL,           // e.g. https://bermstone.vercel.app
-  process.env.CLIENT_URL_PREVIEW,   // optional staging URL
-].filter(Boolean); // removes undefined/null entries
-
-app.use(cors({
+// ── CORS ────────────────────────────────────────────────
+// Permissive CORS — accepts any origin in development,
+// restricts to known domains in production.
+const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS: origin "${origin}" not allowed`));
+    // Always allow: no origin (Postman, mobile), localhost, Vercel deploys
+    if (
+      !origin ||
+      origin.includes('localhost') ||
+      origin.includes('127.0.0.1') ||
+      origin.endsWith('.vercel.app') ||
+      origin === process.env.CLIENT_URL ||
+      origin === process.env.CLIENT_URL_PREVIEW
+    ) {
+      return callback(null, true);
+    }
+    // In development, allow everything
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    callback(new Error(`CORS blocked: ${origin}`));
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+  credentials:    true,
+  methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  optionsSuccessStatus: 200, // some browsers send 204 issues
+};
 
-// Handle preflight requests BEFORE rate limiting hits them
-app.options('*', cors());
+// Handle OPTIONS preflight for every route FIRST
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
 
-// ── Rate Limiting ──────────────────────────────────────
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Required for Render: use the real client IP, not proxy IP
-  keyGenerator: (req) => req.ip,
-});
+// ── Security ─────────────────────────────────────────────
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => req.ip,
-});
+// ── Rate limiting ─────────────────────────────────────────
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
+app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 30 }));
 
-app.use(globalLimiter);
-app.use('/api/auth', authLimiter);
-
-// ── Parsers ────────────────────────────────────────────
+// ── Parsers ──────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('dev'));
+}
 
-// ── Health ─────────────────────────────────────────────
+// ── Health check ─────────────────────────────────────────
 app.get('/health', (_req, res) =>
   res.json({
     success: true,
     message: 'Bermstone API running',
-    env: process.env.NODE_ENV,
-    ts: new Date(),
+    env:     process.env.NODE_ENV || 'development',
+    db:      'connected',
+    ts:      new Date().toISOString(),
   })
 );
 
-// ── Routes ─────────────────────────────────────────────
+// ── Routes ───────────────────────────────────────────────
 app.use('/api/auth',        require('./routes/auth'));
 app.use('/api/properties',  require('./routes/properties'));
 app.use('/api/investments', require('./routes/investments'));
@@ -86,32 +77,22 @@ app.use('/api/bookings',    require('./routes/bookings'));
 app.use('/api/inquiries',   require('./routes/inquiries'));
 app.use('/api/reviews',     require('./routes/reviews'));
 app.use('/api/upload',      require('./routes/upload'));
-app.use('/api/analytics',   require('./routes/analytics'));
+app.use('/api/analytics',          require('./routes/analytics'));
+app.use('/api/investment-payments', require('./routes/investment-payments'));
 
-// ── 404 ────────────────────────────────────────────────
+// ── 404 ──────────────────────────────────────────────────
 app.use((_req, res) =>
   res.status(404).json({ success: false, message: 'Route not found' })
 );
 
-// ── Error handler ──────────────────────────────────────
+// ── Error handler ─────────────────────────────────────────
 app.use(errorHandler);
 
-// ── Start ──────────────────────────────────────────────
-// Render requires listening on 0.0.0.0, not just the port
+// ── Start ─────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 5000;
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🚀 Bermstone API  →  http://0.0.0.0:${PORT}`);
-  console.log(`💊 Health check   →  http://0.0.0.0:${PORT}/health`);
-  console.log(`🌍 Environment    →  ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Allowed CORS   →  ${allowedOrigins.join(', ')}\n`);
-});
-
-server.keepAliveTimeout = 120000; // 120s — Render's load balancer needs this
-server.headersTimeout   = 125000; // must be > keepAliveTimeout
-
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down...');
-  server.close(() => process.exit(0));
+app.listen(PORT, () => {
+  console.log(`\n🚀  Bermstone API   →  http://localhost:${PORT}`);
+  console.log(`💊  Health check   →  http://localhost:${PORT}/health\n`);
 });
 
 module.exports = app;
