@@ -11,12 +11,12 @@ const PropertySchema = new mongoose.Schema(
       address:     { type: String, required: true },
       city:        { type: String, required: true },
       state:       { type: String, required: true },
-      country:     { type: String, default: 'Nigeria' },
+      country:     { type: String, default: 'Morocco' },
       coordinates: { lat: Number, lng: Number },
     },
 
     pricePerNight: { type: Number, required: true, min: 0 },
-    currency:      { type: String, default: 'NGN' },
+    currency:      { type: String, default: 'MAD' },
 
     discounts: [
       {
